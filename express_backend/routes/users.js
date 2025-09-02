@@ -11,24 +11,26 @@ router.post("/signup", async (req, res) => {
   const user = { name: username, email, password };
   const isValid = validateUser(user);
   if (!isValid) {
-    res.send({ msg: "Invalid User", success: false });
+    return res.status(400).send({ msg: "Invalid User", success: false });
   } else {
     try {
       const userExist = await User.findOne({ email });
       if (userExist) {
-        res.send({ msg: "Email already exists", success: false });
+        return res
+          .status(409)
+          .send({ msg: "Email already exists", success: false });
       }
       const salt = await bcrypt.genSalt(15);
       user.password = await bcrypt.hash(user.password, salt);
       const result = await User.insertOne(user);
-      res.send({
+      return res.status(201).send({
         msg: "Signup Successfull ✅",
         user: _.pick(result, ["name", "email"]),
         success: true,
       });
     } catch (err) {
       console.log(err);
-      res.send({ msg: err.message, success: false });
+      return res.status(400).send({ msg: err.message, success: false });
     }
   }
 });
@@ -40,21 +42,54 @@ router.post("/login", async (req, res) => {
     if (validUser) {
       const validPassword = await bcrypt.compare(password, validUser.password);
       if (validPassword) {
-        const token = generateToken(_.pick(validUser, ["name", "email"]));
+        const token = await generateToken(_.pick(validUser, ["name", "email"]));
         const user = _.pick(validUser, ["email", "name"]);
         user.token = token;
-        res.send({
+        res.status(200).send({
           msg: "Login Successful ✅",
           success: true,
           user,
         });
       } else {
-        res.send({ msg: "Invalid email or password", success: false });
+        res.status(401).send({
+          msg: "Invalid email or password",
+          success: false,
+          user: null,
+        });
       }
     } else {
-      res.send({ msg: "Invalid email or password", success: false });
+      res.status(401).send({
+        msg: "Invalid email or password",
+        success: false,
+        user: null,
+      });
     }
-  } catch (err) {}
+  } catch (err) {
+    res
+      .status(500)
+      .send({ msg: "Something went wrong", success: false, user: null });
+  }
 });
 
+router.get("/profile", async (req, res) => {
+  const { email } = req.body;
+  try {
+    const user = await User.findOne(
+      { email },
+      { projection: { password: 0, _id: 0 } }
+    );
+    if (user) {
+      res.status(200).send({ msg: "✅ User Found ", success: true, user });
+    } else {
+      res
+        .status(404)
+        .send({ msg: "❌ No User Found", success: false, user: null });
+    }
+  } catch (error) {
+    console.log(error.message);
+    res
+      .status(500)
+      .send({ msg: "❌ Something went wrong", success: false, user: null });
+  }
+});
 export default router;

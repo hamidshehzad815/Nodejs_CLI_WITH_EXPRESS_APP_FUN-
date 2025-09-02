@@ -12,7 +12,7 @@ async function clearScreen() {
   process.stdout.write("\x1Bc");
 }
 async function spinner(text, color = "yellow", type = "dots", duration = 300) {
-  const spinner = ora({ text, color, spinners: type }).start();
+  const spinner = ora({ text, color, spinner: type }).start();
   await delay(duration);
   return spinner;
 }
