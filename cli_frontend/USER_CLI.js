@@ -32,11 +32,13 @@ class CLI {
       if (answer.choice === "Login") {
         clearScreen();
         banners.login();
-        await this.loginHandler();
-        while (true) {
-          const exit = await this.userChoice();
-          if (exit) {
-            break;
+        const loginStatus = await this.loginHandler();
+        if (loginStatus) {
+          while (true) {
+            const exit = await this.userChoice();
+            if (exit) {
+              break;
+            }
           }
         }
         exit = false;
@@ -57,9 +59,10 @@ class CLI {
   async userChoice() {
     clearScreen();
     let exit = false;
+    banners.dashboard();
     await inquirer.prompt(userActionPrompt).then(async (choice) => {
       if (choice.action === "Profile") {
-        await this.profileHandler();
+        exit = await this.profileHandler();
       } else if (choice.action === "Logout") {
         if (!client.isOpen) {
           await client.connect();
@@ -76,11 +79,22 @@ class CLI {
   async profileHandler() {
     const sp = await spinner("Fetching Profile...", "green", "toggle10");
     const response = await this.isLoggedin();
-    const profile = response.user;
-    sp.succeed("Profile Fetched");
-    sp.stop();
-    console.table(_.pick(profile, ["name", "email"]));
-    await inquirer.prompt(continuePrompt);
+    let loginRequired = true;
+    if (response.success) {
+      loginRequired = false;
+      const profile = response.user;
+      sp.succeed("Profile Fetched");
+      sp.stop();
+      clearScreen();
+      banners.profile();
+      console.table(_.pick(profile, ["name", "email"]));
+      await inquirer.prompt(continuePrompt);
+    } else {
+      sp.fail("Profile Fetching failed.\nPlease make sure to login first");
+      sp.stop();
+      await delay(2000);
+    }
+    return loginRequired;
   }
 
   async isLoggedin() {
@@ -103,11 +117,7 @@ class CLI {
       clearScreen();
       sp.succeed(chalk.greenBright(`✅ ${response.msg}`));
 
-      console.log(
-        chalk.blue.bold("🎉 Welcome, ") +
-          chalk.yellowBright.bold(response.user.name) +
-          chalk.blue.bold(" 🎉")
-      );
+      banners.welcome(response.user.name);
 
       await delay(2000);
       if (!response.redis)
@@ -119,6 +129,7 @@ class CLI {
     } else {
       sp.fail(response.msg);
       sp.stop();
+      await delay(2000);
       return false;
     }
   }
@@ -139,9 +150,10 @@ class CLI {
           );
         } catch (err) {
           // Axios error handling
+          backendResponse = { data: {} };
           if (err.response) {
             // Server responded with non-2xx
-            backendResponse = {
+            backendResponse.data = {
               success: false,
               msg:
                 err.response.data?.msg ||
@@ -149,13 +161,13 @@ class CLI {
             };
           } else if (err.request) {
             // No response from server
-            backendResponse = {
+            backendResponse.data = {
               success: false,
               msg: "No response from server. Check your connection.",
             };
           } else {
             // Something else went wrong
-            backendResponse = {
+            backendResponse.data = {
               success: false,
               msg: `Error: ${err.message}`,
             };

@@ -10,8 +10,9 @@ router.post("/signup", async (req, res) => {
   const { username, email, password } = req.body;
   const user = { name: username, email, password };
   const isValid = validateUser(user);
-  if (!isValid) {
-    return res.status(400).send({ msg: "Invalid User", success: false });
+  console.log(isValid);
+  if (isValid.error) {
+    return res.status(400).send({ msg: isValid.error.message, success: false });
   } else {
     try {
       const userExist = await User.findOne({ email });
