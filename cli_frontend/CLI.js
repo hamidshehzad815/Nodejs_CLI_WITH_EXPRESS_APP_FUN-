@@ -1,7 +1,5 @@
 import inquirer from "inquirer";
 import chalk from "chalk";
-import ora from "ora";
-import figlet from "figlet";
 import axios from "axios";
 import _ from "lodash";
 import {
@@ -9,26 +7,22 @@ import {
   clearScreen,
   runProgressBar,
   spinner,
+  printProfile,
 } from "./utils/supportingFunctions.js";
 import client from "./redisClient.js";
-import { banners } from "../cli_frontend/utils/banners.js";
-import {
-  loginPrompt,
-  signupPrompt,
-  mainMenuPrompt,
-  userActionPrompt,
-  continuePrompt,
-} from "./utils/Prompts.js";
-
+import { banners } from "./utils/banners.js";
+import { Prompts } from "./utils/Prompts.js";
 class CLI {
-  constructor() {}
+  constructor() {
+    this.user = {};
+  }
 
   async promptMainMenu() {
     clearScreen();
     let exit = false;
 
     banners.main();
-    await inquirer.prompt(mainMenuPrompt).then(async (answer) => {
+    await inquirer.prompt(Prompts.mainMenuPrompt).then(async (answer) => {
       if (answer.choice === "Login") {
         clearScreen();
         banners.login();
@@ -59,15 +53,16 @@ class CLI {
   async userChoice() {
     clearScreen();
     let exit = false;
+    let innerExit = false;
     banners.dashboard();
-    await inquirer.prompt(userActionPrompt).then(async (choice) => {
+    await inquirer.prompt(Prompts.userActionPrompt).then(async (choice) => {
       if (choice.action === "Profile") {
-        exit = await this.profileHandler();
-      } else if (choice.action === "Logout") {
-        if (!client.isOpen) {
-          await client.connect();
+        while (true) {
+          innerExit = await this.profileChoice();
+          if (innerExit) break;
         }
-        await client.del("loggedIn");
+      } else if (choice.action === "Logout") {
+        await this.logout();
         exit = true;
       } else if (choice.action === "Exit") {
         exit = true;
@@ -76,25 +71,101 @@ class CLI {
     return exit;
   }
 
+  async profileChoice() {
+    clearScreen();
+    let exit = false;
+    banners.profile();
+    await inquirer.prompt(Prompts.profilePrompt).then(async (answer) => {
+      if (answer.choice === "View Profile") {
+        await this.profileHandler();
+      } else if (answer.choice === "Update Profile") {
+        await this.updateProfile();
+      } else if (answer.choice === "Back") {
+        exit = true;
+      }
+    });
+    return exit;
+  }
+
+  async logout() {
+    const sp = await spinner("Logging Out...", "blue", "dots");
+    await delay(1500);
+    if (!client.isOpen) {
+      await client.connect();
+    }
+    await client.del("loggedIn");
+    sp.succeed("Successfully Logout");
+    await delay(1500);
+    sp.stop();
+  }
+
   async profileHandler() {
     const sp = await spinner("Fetching Profile...", "green", "toggle10");
     const response = await this.isLoggedin();
     let loginRequired = true;
     if (response.success) {
       loginRequired = false;
-      const profile = response.user;
+      const profile = _.pick(response.user, ["personalInfo", "contactInfo"]);
       sp.succeed("Profile Fetched");
       sp.stop();
       clearScreen();
       banners.profile();
-      console.table(_.pick(profile, ["name", "email"]));
-      await inquirer.prompt(continuePrompt);
+      // console.table(_.pick(profile, ["name", "email"]));
+      printProfile(profile);
+
+      await inquirer.prompt(Prompts.continuePrompt);
     } else {
       sp.fail("Profile Fetching failed.\nPlease make sure to login first");
       sp.stop();
       await delay(2000);
     }
     return loginRequired;
+  }
+
+  async updateProfile() {
+    clearScreen();
+    banners.updateProfile();
+
+    await inquirer
+      .prompt(Prompts.updateProfile)
+      .then(async (updatedProfile) => {
+        const sp = await spinner("🔄 Updating Profile...", "green", "toggle10");
+        try {
+          const res = await axios.post(
+            "http://localhost:3000/users/updateProfile",
+            { updatedProfile, user: this.user }
+          );
+          if (res.data.success) {
+            sp.succeed(chalk.green(res.data.msg));
+            sp.stop();
+          } else {
+            sp.fail(res.data.msg);
+            sp.stop();
+          }
+        } catch (err) {
+          sp.stop();
+
+          if (err.response) {
+            // Server responded with an error (e.g., 400, 401, 409)
+            console.log(
+              chalk.red(
+                `❌ Signup failed: ${
+                  err.response.data?.msg || err.response.statusText
+                }`
+              )
+            );
+          } else if (err.request) {
+            // No response received
+            console.log(
+              chalk.red("❌ No response from server. Please try again later.")
+            );
+          } else {
+            // Other unexpected error
+            console.log(chalk.red(`❌ Error: ${err.message}`));
+          }
+        }
+      });
+    await delay(5000);
   }
 
   async isLoggedin() {
@@ -106,18 +177,23 @@ class CLI {
     if (!response) {
       response = {};
       response.success = false;
-    } else response.redis = true;
+    } else {
+      response.redis = true;
+      this.user = _.omit(response.user, ["token"]);
+    }
     return response;
   }
-
   async loginHandler() {
     const response = await this.login();
     const sp = await spinner("Logging in...", "green", "circleHalves", 1000);
     if (response.success) {
       clearScreen();
       sp.succeed(chalk.greenBright(`✅ ${response.msg}`));
-
-      banners.welcome(response.user.name);
+      const fullname =
+        response.user.personalInfo.firstName +
+        " " +
+        response.user.personalInfo.lastName;
+      banners.welcome(fullname);
 
       await delay(2000);
       if (!response.redis)
@@ -133,7 +209,6 @@ class CLI {
       return false;
     }
   }
-
   async login() {
     clearScreen();
     const response = await this.isLoggedin();
@@ -142,7 +217,7 @@ class CLI {
     } else {
       banners.login();
       let backendResponse = null;
-      await inquirer.prompt(loginPrompt).then(async (credentials) => {
+      await inquirer.prompt(Prompts.loginPrompt).then(async (credentials) => {
         try {
           backendResponse = await axios.post(
             `http://localhost:3000/users/login`,
@@ -177,13 +252,12 @@ class CLI {
       return backendResponse.data;
     }
   }
-
   async signup() {
     clearScreen();
     banners.signup();
     let signupSuccess = false;
 
-    await inquirer.prompt(signupPrompt).then(async (userInfo) => {
+    await inquirer.prompt(Prompts.signupPrompt).then(async (userInfo) => {
       const sp = await spinner("Signing up...", "green", "circleHalves");
       try {
         const res = await axios.post(
@@ -235,11 +309,15 @@ class CLI {
   }
 }
 
-const cli = new CLI();
-while (true) {
-  const exit = await cli.promptMainMenu();
-  if (exit) {
-    break;
+async function start() {
+  const cli = new CLI();
+  while (true) {
+    const exit = await cli.promptMainMenu();
+    if (exit) {
+      break;
+    }
   }
+  process.exit(0);
 }
-process.exit(0);
+
+start();

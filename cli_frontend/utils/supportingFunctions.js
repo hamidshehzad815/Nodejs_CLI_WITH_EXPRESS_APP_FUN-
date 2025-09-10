@@ -1,8 +1,7 @@
-import inquirer from "inquirer";
 import chalk from "chalk";
 import ora, { spinners } from "ora";
-import figlet from "figlet";
 import cliProgress from "cli-progress";
+import boxen from "boxen";
 
 const delay = async (duration) => {
   await new Promise((resolve) => setTimeout(resolve, duration));
@@ -46,4 +45,35 @@ async function runProgressBar(
   bar.stop();
   process.stdout.write("\n");
 }
-export { spinner, runProgressBar, clearScreen, delay };
+function printProfile(profile) {
+  const { personalInfo, contactInfo } = profile;
+
+  const profileCard = `
+${chalk.bold.cyan("👤 Name:")}     ${personalInfo.firstName} ${
+    personalInfo.lastName
+  }
+${chalk.bold.cyan("🎂 DOB:")}      ${new Date(
+    personalInfo.dateOfBirth
+  ).toDateString()}
+
+${chalk.bold.green("📧 Email:")}   ${contactInfo.email}
+${chalk.bold.green("📞 Phone:")}   ${contactInfo.phone}
+
+${chalk.bold.yellow("🏠 Address:")}
+   ${contactInfo.address.street}
+   ${contactInfo.address.city}, ${contactInfo.address.state}
+   ${contactInfo.address.country} - ${contactInfo.address.zipCode}
+`;
+
+  console.log(
+    boxen(profileCard, {
+      padding: 1,
+      margin: 1,
+      borderStyle: "round",
+      borderColor: "cyan",
+      title: chalk.bold("User Profile"),
+      titleAlignment: "center",
+    })
+  );
+}
+export { spinner, runProgressBar, clearScreen, printProfile, delay };
