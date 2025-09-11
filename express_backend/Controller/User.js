@@ -127,14 +127,12 @@ async function profile(req, res) {
 
 async function updateProfile(req, res) {
   try {
-    console.log(req.body);
     let { firstName, lastName, phone, address } = req.body.updatedProfile;
-
     if (address) {
       const [street, city, state, country, zipCode] = address.split(" ");
       address = { street, city, state, country, zipCode };
     }
-    await User.updateOne(
+    const result = await User.findOneAndUpdate(
       { "contactInfo.email": req.body.user.contactInfo.email },
       {
         $set: {
@@ -145,11 +143,16 @@ async function updateProfile(req, res) {
           "contactInfo.phone": phone || req.body.user.contactInfo.phone,
           "contactInfo.address": address || req.body.user.contactInfo.address,
         },
-      }
+      },
+      { new: true }
     );
-    return res
-      .status(201)
-      .send({ msg: "User updated successfully", success: true });
+    const updatedUser = _.pick(result, ["personalInfo", "contactInfo"]);
+    console.log(updatedUser);
+    return res.status(201).send({
+      msg: "User updated successfully",
+      success: true,
+      updatedUser,
+    });
   } catch (err) {
     console.log(err.message);
     return res

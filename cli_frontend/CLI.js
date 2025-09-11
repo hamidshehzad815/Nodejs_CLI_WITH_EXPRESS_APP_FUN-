@@ -104,6 +104,7 @@ class CLI {
     const response = await this.isLoggedin();
     let loginRequired = true;
     if (response.success) {
+      console.log(response.user);
       loginRequired = false;
       const profile = _.pick(response.user, ["personalInfo", "contactInfo"]);
       sp.succeed("Profile Fetched");
@@ -136,6 +137,20 @@ class CLI {
             { updatedProfile, user: this.user }
           );
           if (res.data.success) {
+            if (!client.isOpen) {
+              await client.connect();
+            }
+            await client.set(
+              "loggedIn",
+              JSON.stringify({
+                user: res.data.updatedUser,
+                msg: "Login Successful ✅ ",
+                success: true,
+              }),
+              {
+                KEEPTTL: true,
+              }
+            );
             sp.succeed(chalk.green(res.data.msg));
             sp.stop();
           } else {
@@ -149,7 +164,7 @@ class CLI {
             // Server responded with an error (e.g., 400, 401, 409)
             console.log(
               chalk.red(
-                `❌ Signup failed: ${
+                `❌ Profile updation failed: ${
                   err.response.data?.msg || err.response.statusText
                 }`
               )
@@ -179,7 +194,7 @@ class CLI {
       response.success = false;
     } else {
       response.redis = true;
-      this.user = _.omit(response.user, ["token"]);
+      (this.user = response.user), ["token"];
     }
     return response;
   }
