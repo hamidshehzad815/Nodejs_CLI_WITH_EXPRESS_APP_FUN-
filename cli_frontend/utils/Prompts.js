@@ -173,7 +173,7 @@ const profilePrompt = [
     type: "list",
     name: "choice",
     message: chalk.cyan("What u want to do"),
-    choices: ["View Profile", "Update Profile", "Back"],
+    choices: ["View Profile", "Update Profile", "Verify Email", "Back"],
   },
 ];
 
@@ -294,13 +294,13 @@ const newPassword = [
   },
 ];
 
-const resetToken = [
+const TokenPrompt = [
   {
     type: "input",
-    name: "resetToken",
-    message: chalk.cyan("Enter reset token received through email: "),
+    name: "token",
+    message: chalk.cyan("Enter token received through email: "),
     validate: (input) => {
-      if (!input) return "Reset token is required";
+      if (!input) return "Token is required";
       return true;
     },
   },
@@ -315,5 +315,5 @@ export const Prompts = {
   updateProfile,
   emailPrompt,
   newPassword,
-  resetToken,
+  TokenPrompt,
 };

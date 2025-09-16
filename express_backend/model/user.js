@@ -166,11 +166,19 @@ userSchema.methods.generatePasswordResetToken = function () {
     .update(resetToken)
     .digest("hex");
 
-  console.log("schema", this.authentication.passwordResetToken);
   // Set expiry (e.g., 10 minutes)
   this.authentication.passwordResetExpires = Date.now() + 10 * 60 * 1000;
 
   return resetToken; // return plain token (send via email)
+};
+userSchema.methods.generateEmailVerificationToken = function () {
+  const verificationToken = crypto.randomBytes(32).toString("hex");
+  this.authentication.emailVerificationToken = crypto
+    .createHash("sha256")
+    .update(verificationToken)
+    .digest("hex");
+
+  return verificationToken;
 };
 
 const User = mongoose.model("User", userSchema);

@@ -5,6 +5,7 @@ import generateToken from "../utils/generateJWT.js";
 import {
   sendWelcomeEmail,
   sendResetPasswordEmail,
+  sendEmailVerificationToken,
 } from "../services/EmailService.js";
 import crypto from "crypto";
 
@@ -56,7 +57,14 @@ async function signup(req, res) {
 async function login(req, res) {
   const { email, password } = req.body;
   try {
-    const validUser = await User.findOne({ "contactInfo.email": email });
+    const validUser = await User.findOneAndUpdate(
+      { "contactInfo.email": email },
+      {
+        $set: {
+          "authentication.lastLogin": Date.now(),
+        },
+      }
+    );
     if (validUser) {
       const validPassword = await bcrypt.compare(
         password,
@@ -256,6 +264,72 @@ async function resetPassword(req, res) {
   }
 }
 
+async function sendVerificationToken(req, res) {
+  const { email } = req.body;
+  try {
+    const user = await User.findOne({ "contactInfo.email": email });
+    if (!user) {
+      return res.status(404).send({
+        msg: "If email is correct verification token is sent",
+        success: false,
+      });
+    }
+
+    if (user && user.authentication.emailVerified) {
+      return res
+        .status(200)
+        .send({ msg: "Email Already Verified", success: true });
+    }
+
+    const verificationToken = user.generateEmailVerificationToken();
+    await user.save({ validateBeforeSave: false });
+
+    sendEmailVerificationToken(user.contactInfo.email, verificationToken);
+
+    return res.status(200).send({
+      msg: "If email is correct verification token is sent",
+      success: true,
+    });
+  } catch (err) {
+    console.log(err.message);
+    res.status(500).send({ msg: "somethiing went wrong", success: false });
+  }
+}
+
+async function verifyEmail(req, res) {
+  const { email, token } = req.body;
+  console.log(req.body);
+  try {
+    const hashedToken = crypto.createHash("sha256").update(token).digest("hex");
+    const user = await User.findOneAndUpdate(
+      {
+        "contactInfo.email": email,
+        "authentication.emailVerificationToken": hashedToken,
+      },
+      {
+        $unset: {
+          "authentication.emailVerificationToken": 1,
+        },
+        $set: {
+          "authentication.emailVerified": true,
+        },
+      }
+    );
+
+    if (!user) {
+      return res
+        .status(404)
+        .send({ msg: "Invalid email or token", success: true });
+    }
+
+    return res
+      .status(200)
+      .send({ msg: "Email verified SuccessFully", success: true });
+  } catch (err) {
+    console.log(err.message);
+    res.status(500).send({ msg: "somethiing went wrong", success: false });
+  }
+}
 export {
   signup,
   login,
@@ -264,4 +338,6 @@ export {
   forgetPassword,
   validateToken,
   resetPassword,
+  sendVerificationToken,
+  verifyEmail,
 };

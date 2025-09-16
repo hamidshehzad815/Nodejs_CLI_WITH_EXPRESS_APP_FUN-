@@ -15,6 +15,7 @@ import { Prompts } from "./utils/Prompts.js";
 class CLI {
   constructor() {
     this.user = {};
+    this.loginRequired = false;
   }
 
   async promptMainMenu() {
@@ -59,10 +60,11 @@ class CLI {
     banners.dashboard();
     await inquirer.prompt(Prompts.userActionPrompt).then(async (choice) => {
       if (choice.action === "Profile") {
-        while (true) {
+        while (!this.loginRequired) {
           innerExit = await this.profileChoice();
           if (innerExit) break;
         }
+        if (this.loginRequired) exit = true;
       } else if (choice.action === "Logout") {
         await this.logout();
         exit = true;
@@ -77,12 +79,12 @@ class CLI {
     clearScreen();
     let sp = null;
     let success = false;
-    await inquirer.prompt(Prompts.resetToken).then(async (token) => {
+    await inquirer.prompt(Prompts.TokenPrompt).then(async (resetToken) => {
       try {
         sp = await spinner("Verifying reset token...");
         const res = await axios.post(
           "http://localhost:3000/users/validateToken",
-          { token: token.resetToken, email }
+          { token: resetToken.token, email }
         );
         if (res.data.success) {
           success = true;
@@ -230,11 +232,111 @@ class CLI {
         await this.profileHandler();
       } else if (answer.choice === "Update Profile") {
         await this.updateProfile();
+      } else if (answer.choice === "Verify Email") {
+        await this.sendVerificationToken();
       } else if (answer.choice === "Back") {
         exit = true;
       }
     });
     return exit;
+  }
+
+  async sendVerificationToken() {
+    const response = await this.isLoggedin();
+    let sp = null;
+    if (response.success) {
+      clearScreen();
+      try {
+        sp = await spinner("Fetching Profile...");
+        const res = await axios.post(
+          "http://localhost:3000/users/emailVerificationToken",
+          { email: this.user.contactInfo.email }
+        );
+        if (res.data.success) {
+          sp.succeed(res.data.msg);
+          sp.stop();
+          await delay(2000);
+          if (res.data.msg !== "Email Already Verified")
+            await this.verifyEmail();
+        } else {
+          sp.fail(res.data.msg);
+          sp.stop();
+          await delay(2000);
+        }
+      } catch (err) {
+        if (err.response) {
+          // Server responded with an error (e.g., 400, 401, 409)
+          sp.fail(
+            chalk.red(
+              `❌ Profile updation failed: ${
+                err.response.data?.msg || err.response.statusText
+              }`
+            )
+          );
+        } else if (err.request) {
+          // No response received
+          sp.fail(
+            chalk.red("❌ No response from server. Please try again later.")
+          );
+        } else {
+          // Other unexpected error
+          sp.fail(chalk.red(`❌ Error: ${err.message}`));
+        }
+        sp.stop();
+      }
+    } else {
+      console.log(
+        chalk.red("Profile Fetching failed.\nPlease make sure to login first")
+      );
+      await delay(2000);
+    }
+  }
+
+  async verifyEmail() {
+    clearScreen();
+    let sp = null;
+    try {
+      await inquirer
+        .prompt(Prompts.TokenPrompt)
+        .then(async (emailVerificationToken) => {
+          sp = await spinner("Verifying Email...");
+          const res = await axios.post(
+            "http://localhost:3000/users/verifyEmail",
+            {
+              token: emailVerificationToken.token,
+              email: this.user.contactInfo.email,
+            }
+          );
+
+          if (res.data.success) {
+            sp.succeed(res.data.msg);
+          } else {
+            sp.fail(res.data.msg);
+          }
+          sp.stop();
+        });
+    } catch (err) {
+      if (err.response) {
+        // Server responded with an error (e.g., 400, 401, 409)
+        sp.fail(
+          chalk.red(
+            `❌ Profile updation failed: ${
+              err.response.data?.msg || err.response.statusText
+            }`
+          )
+        );
+      } else if (err.request) {
+        // No response received
+        sp.fail(
+          chalk.red("❌ No response from server. Please try again later.")
+        );
+      } else {
+        // Other unexpected error
+        sp.fail(chalk.red(`❌ Error: ${err.message}`));
+      }
+      sp.stop();
+    }
+    await delay(2000);
   }
 
   async logout() {
@@ -252,10 +354,7 @@ class CLI {
   async profileHandler() {
     const sp = await spinner("Fetching Profile...", "green", "toggle10");
     const response = await this.isLoggedin();
-    let loginRequired = true;
     if (response.success) {
-      console.log(response.user);
-      loginRequired = false;
       const profile = _.pick(response.user, ["personalInfo", "contactInfo"]);
       sp.succeed("Profile Fetched");
       sp.stop();
@@ -270,67 +369,77 @@ class CLI {
       sp.stop();
       await delay(2000);
     }
-    return loginRequired;
   }
 
   async updateProfile() {
     clearScreen();
-    banners.updateProfile();
-
-    await inquirer
-      .prompt(Prompts.updateProfile)
-      .then(async (updatedProfile) => {
-        const sp = await spinner("🔄 Updating Profile...", "green", "toggle10");
-        try {
-          const res = await axios.post(
-            "http://localhost:3000/users/updateProfile",
-            { updatedProfile, user: this.user }
+    const response = await this.isLoggedin();
+    if (response.success) {
+      banners.updateProfile();
+      await inquirer
+        .prompt(Prompts.updateProfile)
+        .then(async (updatedProfile) => {
+          const sp = await spinner(
+            "🔄 Updating Profile...",
+            "green",
+            "toggle10"
           );
-          if (res.data.success) {
-            if (!client.isOpen) {
-              await client.connect();
-            }
-            await client.set(
-              "loggedIn",
-              JSON.stringify({
-                user: res.data.updatedUser,
-                msg: "Login Successful ✅ ",
-                success: true,
-              }),
-              {
-                KEEPTTL: true,
+          try {
+            const res = await axios.post(
+              "http://localhost:3000/users/updateProfile",
+              { updatedProfile, user: this.user }
+            );
+            if (res.data.success) {
+              if (!client.isOpen) {
+                await client.connect();
               }
-            );
-            sp.succeed(chalk.green(res.data.msg));
+              await client.set(
+                "loggedIn",
+                JSON.stringify({
+                  user: res.data.updatedUser,
+                  msg: "Login Successful ✅ ",
+                  success: true,
+                }),
+                {
+                  KEEPTTL: true,
+                }
+              );
+              sp.succeed(chalk.green(res.data.msg));
+              sp.stop();
+            } else {
+              sp.fail(res.data.msg);
+              sp.stop();
+            }
+            await delay(1500);
+          } catch (err) {
             sp.stop();
-          } else {
-            sp.fail(res.data.msg);
-            sp.stop();
-          }
-          await delay(1500);
-        } catch (err) {
-          sp.stop();
 
-          if (err.response) {
-            // Server responded with an error (e.g., 400, 401, 409)
-            console.log(
-              chalk.red(
-                `❌ Profile updation failed: ${
-                  err.response.data?.msg || err.response.statusText
-                }`
-              )
-            );
-          } else if (err.request) {
-            // No response received
-            console.log(
-              chalk.red("❌ No response from server. Please try again later.")
-            );
-          } else {
-            // Other unexpected error
-            console.log(chalk.red(`❌ Error: ${err.message}`));
+            if (err.response) {
+              // Server responded with an error (e.g., 400, 401, 409)
+              console.log(
+                chalk.red(
+                  `❌ Profile updation failed: ${
+                    err.response.data?.msg || err.response.statusText
+                  }`
+                )
+              );
+            } else if (err.request) {
+              // No response received
+              console.log(
+                chalk.red("❌ No response from server. Please try again later.")
+              );
+            } else {
+              // Other unexpected error
+              console.log(chalk.red(`❌ Error: ${err.message}`));
+            }
           }
-        }
-      });
+        });
+    } else {
+      console.log(
+        chalk.red("Profile Fetching failed.\nPlease make sure to login first")
+      );
+      await delay(2000);
+    }
   }
 
   async isLoggedin() {
@@ -342,6 +451,7 @@ class CLI {
     if (!response) {
       response = {};
       response.success = false;
+      this.loginRequired = true;
     } else {
       response.redis = true;
       (this.user = response.user), ["token"];
@@ -352,6 +462,7 @@ class CLI {
     const response = await this.login();
     const sp = await spinner("Logging in...", "green", "circleHalves", 1000);
     if (response.success) {
+      this.loginRequired = false;
       clearScreen();
       sp.succeed(chalk.greenBright(`✅ ${response.msg}`));
       const fullname =
