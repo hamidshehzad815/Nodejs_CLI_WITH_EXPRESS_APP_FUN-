@@ -10,7 +10,7 @@ const delay = async (duration) => {
 async function clearScreen() {
   process.stdout.write("\x1Bc");
 }
-async function spinner(text, color = "yellow", type = "dots", duration = 300) {
+async function spinner(text, color = "yellow", type = "dots", duration = 1000) {
   const spinner = ora({ text, color, spinner: type }).start();
   await delay(duration);
   return spinner;

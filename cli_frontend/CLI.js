@@ -41,6 +41,8 @@ class CLI {
         await delay(2000);
         if (success) await this.loginHandler();
         exit = false;
+      } else if (answer.choice === "Forget Password") {
+        await this.forgetPassword();
       } else if (answer.choice === "Exit") {
         clearScreen();
         await this.exit();
@@ -69,6 +71,154 @@ class CLI {
       }
     });
     return exit;
+  }
+
+  async getResetToken(email) {
+    clearScreen();
+    let sp = null;
+    let success = false;
+    await inquirer.prompt(Prompts.resetToken).then(async (token) => {
+      try {
+        sp = await spinner("Verifying reset token...");
+        const res = await axios.post(
+          "http://localhost:3000/users/validateToken",
+          { token: token.resetToken, email }
+        );
+        if (res.data.success) {
+          success = true;
+          sp.succeed(res.data.msg);
+        } else {
+          sp.fail(res.data.msg);
+        }
+        sp.stop();
+      } catch (err) {
+        console.log(err.response.status);
+        await delay(2000);
+        if (err.response) {
+          // Server responded with an error (e.g., 400, 401, 409)
+          sp.fail(
+            chalk.red(
+              `❌ Profile updation failed: ${
+                err.response.data?.msg || err.response.statusText
+              }`
+            )
+          );
+        } else if (err.request) {
+          // No response received
+          sp.fail(
+            chalk.red("❌ No response from server. Please try again later.")
+          );
+        } else {
+          // Other unexpected error
+          sp.fail(chalk.red(`❌ Error: ${err.message}`));
+        }
+        sp.stop();
+      }
+      await delay(2000);
+    });
+    return success;
+  }
+
+  async getNewPassword(email) {
+    clearScreen();
+    let sp = null;
+
+    let pMatch = false;
+    let updatedPassword = {};
+    while (!pMatch) {
+      updatedPassword = await inquirer.prompt(Prompts.newPassword);
+      pMatch =
+        updatedPassword.newPassword === updatedPassword.confirmedPassword
+          ? true
+          : false;
+      if (!pMatch) {
+        console.log("Password not match");
+        await delay(2000);
+      }
+    }
+
+    try {
+      sp = await spinner("Updating new password");
+      const res = await axios.post(
+        "http://localhost:3000/users/resetPassword",
+        { newPassword: updatedPassword.newPassword, email }
+      );
+      if (res.data.success) {
+        sp.succeed(res.data.msg);
+      } else {
+        sp.fail(res.data.msg);
+      }
+      sp.stop;
+    } catch (err) {
+      if (err.response) {
+        // Server responded with an error (e.g., 400, 401, 409)
+        sp.fail(
+          chalk.red(
+            `❌ Profile updation failed: ${
+              err.response.data?.msg || err.response.statusText
+            }`
+          )
+        );
+      } else if (err.request) {
+        // No response received
+        sp.fail(
+          chalk.red("❌ No response from server. Please try again later.")
+        );
+      } else {
+        // Other unexpected error
+        sp.fail(chalk.red(`❌ Error: ${err.message}`));
+      }
+      sp.stop();
+    }
+    await delay(2000);
+  }
+
+  async forgetPassword() {
+    clearScreen();
+    let sp = null;
+    let success = false;
+    await inquirer.prompt(Prompts.emailPrompt).then(async (email) => {
+      try {
+        sp = await spinner("Sending reset token...");
+        const res = await axios.post(
+          "http://localhost:3000/users/forgetPassword",
+          email
+        );
+        if (res.data.success) {
+          sp.succeed(res.data.msg);
+          sp.stop();
+          await delay(2000);
+          success = await this.getResetToken(email.email);
+          if (success) {
+            await this.getNewPassword(email.email);
+          }
+        } else {
+          sp.fail(res.data.msg);
+          sp.stop();
+        }
+      } catch (err) {
+        if (err.response) {
+          // Server responded with an error (e.g., 400, 401, 409)
+          sp.fail(
+            chalk.red(
+              `❌ Profile updation failed: ${
+                err.response.data?.msg || err.response.statusText
+              }`
+            )
+          );
+        } else if (err.request) {
+          // No response received
+          sp.fail(
+            chalk.red("❌ No response from server. Please try again later.")
+          );
+        } else {
+          // Other unexpected error
+          sp.fail(chalk.red(`❌ Error: ${err.message}`));
+        }
+        sp.stop();
+      }
+    });
+    return success;
   }
 
   async profileChoice() {
@@ -157,6 +307,7 @@ class CLI {
             sp.fail(res.data.msg);
             sp.stop();
           }
+          await delay(1500);
         } catch (err) {
           sp.stop();
 
@@ -180,7 +331,6 @@ class CLI {
           }
         }
       });
-    await delay(5000);
   }
 
   async isLoggedin() {

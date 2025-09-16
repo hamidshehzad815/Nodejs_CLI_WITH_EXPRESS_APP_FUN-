@@ -142,7 +142,7 @@ const mainMenuPrompt = [
     type: "list",
     name: "choice",
     message: chalk.cyan("What u want to do"),
-    choices: ["Login", "Signup", "Exit"],
+    choices: ["Login", "Signup", "Forget Password", "Exit"],
   },
 ];
 
@@ -244,6 +244,67 @@ const updateProfile = [
     },
   },
 ];
+
+const emailPrompt = [
+  {
+    type: "input",
+    name: "email",
+    message: chalk.cyan("Enter your email: "),
+    validate: (input) => {
+      if (!input) {
+        return "Email is required";
+      }
+      return true;
+    },
+  },
+];
+
+const newPassword = [
+  {
+    type: "input",
+    name: "newPassword",
+    message: chalk.cyan("Enter your new password"),
+    mask: "*",
+    validate: (input) => {
+      if (!input) {
+        return "Password is required";
+      } else if (input.length < 8) {
+        return "Password must be 8 character long";
+      }
+      const passwordRegex =
+        /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/;
+      if (passwordRegex.test(input)) {
+        return true; // ✅ valid
+      } else {
+        return "Password must be at least 8 characters with uppercase, lowercase, number and special character";
+      }
+    },
+  },
+  {
+    type: "input",
+    name: "confirmedPassword",
+    message: chalk.cyan("Confirm your new password"),
+    mask: "*",
+    validate: (input) => {
+      if (!input) {
+        return "Password is required";
+      }
+      return true;
+    },
+  },
+];
+
+const resetToken = [
+  {
+    type: "input",
+    name: "resetToken",
+    message: chalk.cyan("Enter reset token received through email: "),
+    validate: (input) => {
+      if (!input) return "Reset token is required";
+      return true;
+    },
+  },
+];
 export const Prompts = {
   loginPrompt,
   signupPrompt,
@@ -252,4 +313,7 @@ export const Prompts = {
   continuePrompt,
   profilePrompt,
   updateProfile,
+  emailPrompt,
+  newPassword,
+  resetToken,
 };

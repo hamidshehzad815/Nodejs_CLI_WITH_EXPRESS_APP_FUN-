@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import crypto from "crypto";
 import Joi from "joi";
 
 const userSchema = new mongoose.Schema(
@@ -54,16 +55,6 @@ const userSchema = new mongoose.Schema(
         type: String,
         required: true,
         minlength: 8,
-        validate: {
-          validator: function (v) {
-            // At least 8 chars, 1 uppercase, 1 lowercase, 1 number, 1 special char
-            return /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/.test(
-              v
-            );
-          },
-          message:
-            "Password must be at least 8 characters with uppercase, lowercase, number and special character",
-        },
       },
       lastLogin: { type: Date },
       loginAttempts: { type: Number, default: 0, max: 5 },
@@ -167,6 +158,20 @@ const userSchema = new mongoose.Schema(
     },
   }
 );
+
+userSchema.methods.generatePasswordResetToken = function () {
+  const resetToken = crypto.randomBytes(32).toString("hex");
+  this.authentication.passwordResetToken = crypto
+    .createHash("sha256")
+    .update(resetToken)
+    .digest("hex");
+
+  console.log("schema", this.authentication.passwordResetToken);
+  // Set expiry (e.g., 10 minutes)
+  this.authentication.passwordResetExpires = Date.now() + 10 * 60 * 1000;
+
+  return resetToken; // return plain token (send via email)
+};
 
 const User = mongoose.model("User", userSchema);
 

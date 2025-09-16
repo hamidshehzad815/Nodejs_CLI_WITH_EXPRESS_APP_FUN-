@@ -2,6 +2,11 @@ import { validateUser, User } from "../model/user.js";
 import bcrypt from "bcrypt";
 import _ from "lodash";
 import generateToken from "../utils/generateJWT.js";
+import {
+  sendWelcomeEmail,
+  sendResetPasswordEmail,
+} from "../services/EmailService.js";
+import crypto from "crypto";
 
 async function signup(req, res) {
   let { firstName, lastName, dateOfBirth, email, phone, address, password } =
@@ -33,6 +38,7 @@ async function signup(req, res) {
         salt
       );
       const result = await User.insertOne(user);
+      sendWelcomeEmail(email, firstName + " " + lastName);
       return res.status(201).send({
         msg: "Signup Successfull ✅",
         user: _.pick(result, ["name", "email"]),
@@ -161,4 +167,101 @@ async function updateProfile(req, res) {
   }
 }
 
-export { signup, login, profile, updateProfile };
+async function forgetPassword(req, res) {
+  const { email } = req.body;
+  try {
+    const user = await User.findOne({ "contactInfo.email": email });
+    if (!user) {
+      return res.status(404).send({
+        msg: "If email is correct reset token is sent",
+        success: false,
+      });
+    }
+    const resetToken = user.generatePasswordResetToken();
+    await user.save({ validateBeforeSave: false });
+    sendResetPasswordEmail(user.contactInfo.email, resetToken);
+
+    return res.status(200).send({
+      msg: "If email is correct reset token is sent",
+      success: true,
+    });
+  } catch (err) {
+    console.log(err.message);
+    res.status(500).send({ msg: "somethiing went wrong", success: false });
+  }
+}
+
+async function validateToken(req, res) {
+  const token = req.body.token;
+  const email = req.body.email;
+
+  try {
+    const hashedToken = crypto.createHash("sha256").update(token).digest("hex");
+    // Find user and remove reset fields if token is valid
+    const user = await User.findOneAndUpdate(
+      {
+        "contactInfo.email": email,
+        "authentication.passwordResetToken": hashedToken,
+        "authentication.passwordResetExpires": { $gt: Date.now() },
+      },
+      {
+        $unset: {
+          "authentication.passwordResetToken": 1,
+          "authentication.passwordResetExpires": 1,
+        },
+      },
+      { new: true } // return updated user
+    );
+
+    if (!user) {
+      return res
+        .status(400)
+        .send({ success: false, msg: "Invalid or expired reset token" });
+    }
+
+    return res.status(200).send({
+      success: true,
+      msg: "Token is valid. You can reset your password now.",
+    });
+  } catch (err) {
+    console.error("Token validation error:", err.message);
+    return res
+      .status(500)
+      .send({ success: false, msg: "Something went wrong" });
+  }
+}
+
+async function resetPassword(req, res) {
+  const { email, newPassword } = req.body;
+  try {
+    const user = await User.findOne({ "contactInfo.email": email });
+
+    if (!user) {
+      return res.status(404).send({ success: false, msg: "User not found" });
+    }
+
+    const salt = await bcrypt.genSalt(15);
+    user.authentication.password = await bcrypt.hash(newPassword, salt);
+
+    await user.save();
+
+    return res
+      .status(200)
+      .send({ success: true, msg: "Password has been reset successfully" });
+  } catch (err) {
+    console.error("Reset password error:", err.message);
+    return res
+      .status(500)
+      .send({ success: false, msg: "Something went wrong" });
+  }
+}
+
+export {
+  signup,
+  login,
+  profile,
+  updateProfile,
+  forgetPassword,
+  validateToken,
+  resetPassword,
+};
